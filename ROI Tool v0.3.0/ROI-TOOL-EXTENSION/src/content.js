@@ -111,6 +111,9 @@ async function main() {
             }
         });
 
+        // Notify popup (and any listeners) that data is updated
+        chrome.runtime.sendMessage({ type: 'stockDataUpdated' });
+
         // Enable MutationObserver to keep columns persistent after Yahoo redraws
         observeForTableChanges(ticker, results);
 

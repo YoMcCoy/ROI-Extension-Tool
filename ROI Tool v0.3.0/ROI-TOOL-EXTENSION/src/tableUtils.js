@@ -53,30 +53,62 @@ export function injectROITable(table, results) {
     // --- Add headers ---
     const headerRow = table.querySelector('thead tr');
     if (headerRow && headerRow.cells.length > 0) {
-        roiHeaders.forEach(headerText => {
+        // Find the "% Change" column index (so we can insert ROI columns after it)
+        let insertAfterIdx = -1;
+        for (let i = 0; i < headerRow.cells.length; i++) {
+            if (headerRow.cells[i].textContent.trim() === '% Change') {
+                insertAfterIdx = i;
+                break;
+            }
+        }
+
+        // Fallback to appending at end if "% Change" is not found
+        if (insertAfterIdx === -1) insertAfterIdx = headerRow.cells.length - 1;
+
+        // Insert ROI header cells after "% Change"
+        for (let j = 0; j < roiHeaders.length; j++) {
             const th = document.createElement('th');
-            th.textContent = headerText;
+            th.textContent = roiHeaders[j];
             th.className = 'roi-header';
             th.style.background = '#FFF9E5';
             th.style.color = '#222';
             th.style.fontWeight = 'bold';
-            headerRow.appendChild(th);
-        });
+            headerRow.insertBefore(th, headerRow.cells[insertAfterIdx + 1 + j]);
+        }
     }
 
     // --- Add data cells ---
     const bodyRows = table.querySelectorAll('tbody tr');
     bodyRows.forEach((row, i) => {
         const roiResult = results[i];
+        // Find the "% Change" column index in this row, to insert ROI cells after it
+        let insertAfterIdx = -1;
+        for (let c = 0; c < row.cells.length; c++) {
+            const text = row.cells[c].textContent.trim();
+            // Try to match by column header order
+            if (headerRow && headerRow.cells[c] && headerRow.cells[c].textContent.trim() === '% Change') {
+                insertAfterIdx = c;
+                break;
+            }
+            // Fallback: look for "% Change" in row (edge case)
+            if (text === '% Change') {
+                insertAfterIdx = c;
+                break;
+            }
+        }
+        if (insertAfterIdx === -1) insertAfterIdx = row.cells.length - 1;
+
+        // If no ROI data for this row, insert empty cells
         if (!roiResult || !roiResult.scenarios) {
-            roiHeaders.forEach(() => {
+            for (let j = 0; j < roiHeaders.length; j++) {
                 const td = document.createElement('td');
                 td.textContent = '';
-                row.appendChild(td);
-            });
+                row.insertBefore(td, row.cells[insertAfterIdx + 1 + j]);
+            }
             return;
         }
-        // Add a cell for each scenario (-10%, 0%, +10%)
+
+        // Insert a cell for each scenario (-10%, 0%, +10%)
         roiResult.scenarios.forEach((scenario, colIdx) => {
             const td = document.createElement('td');
             td.textContent = (typeof scenario.annualized === 'number')
@@ -92,8 +124,7 @@ export function injectROITable(table, results) {
                 createModal(roiResult.scenarios);
                 event.stopPropagation();
             });
-
-            row.appendChild(td);
+            row.insertBefore(td, row.cells[insertAfterIdx + 1 + colIdx]);
         });
     });
 }
