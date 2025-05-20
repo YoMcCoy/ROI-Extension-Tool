@@ -4,48 +4,140 @@
 
 let modalEl = null;
 
-// Now createModal takes a single scenario object and optional ticker string
-export function createModal(scenario, ticker = '') {
+// Helper: Load modal position from storage or use default
+async function loadPosition() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['modalPosition'], (result) => {
+            resolve(result.modalPosition || { top: '32px', left: '32px' });
+        });
+    });
+}
+
+// Helper: Save modal position to storage
+function savePosition(top, left) {
+    chrome.storage.local.set({ modalPosition: { top, left } });
+}
+
+// Add drag event listeners only to drag handle (header bar)
+function addDragListeners(dragHandle, modal) {
+    let dragData = {
+        dragging: false,
+        offsetX: 0,
+        offsetY: 0,
+    };
+
+    dragHandle.addEventListener('mousedown', (e) => {
+        dragData.dragging = true;
+        const rect = modal.getBoundingClientRect();
+        dragData.offsetX = e.clientX - rect.left;
+        dragData.offsetY = e.clientY - rect.top;
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!dragData.dragging || !modal) return;
+        let newLeft = e.clientX - dragData.offsetX;
+        let newTop = e.clientY - dragData.offsetY;
+
+        // Clamp modal inside viewport
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const modalRect = modal.getBoundingClientRect();
+        if (newLeft < 0) newLeft = 0;
+        if (newTop < 0) newTop = 0;
+        if (newLeft + modalRect.width > vw) newLeft = vw - modalRect.width;
+        if (newTop + modalRect.height > vh) newTop = vh - modalRect.height;
+
+        modal.style.left = newLeft + 'px';
+        modal.style.top = newTop + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (dragData.dragging && modal) {
+            dragData.dragging = false;
+            // Save position on drag end
+            savePosition(modal.style.top, modal.style.left);
+        }
+    });
+}
+
+// Create modal, async so we can await position load
+export async function createModal(scenario, ticker = '') {
     closeModal();
 
     modalEl = document.createElement('div');
     modalEl.className = 'roi-tool-modal';
     modalEl.style.position = 'fixed';
-    modalEl.style.top = '32px';
-    modalEl.style.right = '32px';
-    modalEl.style.background = '#fff';
-    modalEl.style.border = '2px solid #222';
-    modalEl.style.borderRadius = '16px';
-    modalEl.style.boxShadow = '0 4px 32px rgba(0,0,0,0.18)';
+
+    // Load last position or default
+    const pos = await loadPosition();
+    modalEl.style.top = pos.top;
+    modalEl.style.left = pos.left;
+
+    // Clean Modern Card style for full modal container
+    modalEl.style.background = 'linear-gradient(145deg, #ffffff, #e6e6e6)';
+    modalEl.style.border = '1px solid #ccc';
+    modalEl.style.borderRadius = '12px';
+    modalEl.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.1)';
     modalEl.style.zIndex = 99999;
-    modalEl.style.padding = '20px 28px';
-    modalEl.style.minWidth = '300px';
-    modalEl.style.fontFamily = 'inherit';
-    modalEl.style.whiteSpace = 'pre-line'; // keep newlines
+    modalEl.style.padding = '0'; // Padding will be inside header/content separately
+    modalEl.style.minWidth = '320px';
+    modalEl.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+    modalEl.style.color = '#222';
+    modalEl.style.userSelect = 'none'; // Prevent text selection on drag outside content
 
-    // Title with scenario label and optional ticker
-    const title = document.createElement('h3');
-    title.textContent = `ROI Breakdown @ ${scenario.scenario}` + (ticker ? ` (${ticker})` : '');
-    title.style.margin = '0 0 16px 0';
-    modalEl.appendChild(title);
+    // Header bar (only draggable part)
+    const headerBar = document.createElement('div');
+    headerBar.style.background = '#d0d7e8'; // subtle blue-gray shading
+    headerBar.style.padding = '12px 16px';
+    headerBar.style.borderTopLeftRadius = '12px';
+    headerBar.style.borderTopRightRadius = '12px';
+    headerBar.style.cursor = 'move';
+    headerBar.style.fontWeight = '700';
+    headerBar.style.fontSize = '16px';
+    headerBar.style.color = '#004085';
+    headerBar.textContent = `ROI Breakdown @ ${scenario.scenario}` + (ticker ? ` (${ticker})` : '');
+    modalEl.appendChild(headerBar);
 
-    // Create content text block
+    // Content container
     const content = document.createElement('div');
-    content.style.fontSize = '14px';
-    content.style.lineHeight = '1.4';
+    content.style.padding = '20px 32px';
+    content.style.fontSize = '15px';
+    content.style.lineHeight = '1.5';
+    content.style.color = '#333';
+    content.style.userSelect = 'text'; // Allow text selection in content
 
-    // Format stock movement description for call-away cap
+    // Clear existing content and add line items individually for line breaks
     const capped = scenario.stockMovement < 0 ? ' (Called away, capped at strike)' : ' (Not called away)';
     const stockMovementDisplay = scenario.stockMovement.toFixed(2) + capped;
 
-    // Construct full content string with values and labels
-    content.textContent =
-        `Strike Price: $${scenario.costBasis / 100}\n` +
-        `Call Income: $${scenario.callOptionIncome.toFixed(2)}\n` +
-        `Dividend Income: $${scenario.dividendYield.toFixed(2)}\n` +
-        `Cost Basis: $${scenario.costBasis.toFixed(2)}\n` +
-        `Stock Movement: ${stockMovementDisplay}\n` +
-        `ROI: ${scenario.roiPercent.toFixed(2)}%`;
+    // Data lines as separate divs for vertical layout
+    [
+        `Strike Price: $${(scenario.costBasis / 100).toFixed(2)}`,
+        `Call Income: $${scenario.callOptionIncome.toFixed(2)}`,
+        `Dividend Income: $${scenario.dividendYield.toFixed(2)}`,
+        `Cost Basis: $${scenario.costBasis.toFixed(2)}`,
+        `Stock Movement: ${stockMovementDisplay}`
+    ].forEach(text => {
+        const div = document.createElement('div');
+        div.textContent = text;
+        content.appendChild(div);
+    });
+
+    // ROI line with color and emphasis
+    const roiDiv = document.createElement('div');
+    roiDiv.style.marginTop = '12px';
+    roiDiv.style.fontWeight = 'bold';
+    roiDiv.style.fontSize = '18px';
+    roiDiv.textContent = `ROI: ${scenario.roiPercent.toFixed(2)}%`;
+    if (scenario.roiPercent > 0) {
+        roiDiv.style.color = 'green';
+    } else if (scenario.roiPercent < 0) {
+        roiDiv.style.color = 'red';
+    } else {
+        roiDiv.style.color = 'black';
+    }
+    content.appendChild(roiDiv);
 
     modalEl.appendChild(content);
 
@@ -58,15 +150,22 @@ export function createModal(scenario, ticker = '') {
     closeBtn.style.right = '16px';
     closeBtn.style.border = 'none';
     closeBtn.style.background = 'transparent';
-    closeBtn.style.fontSize = '24px';
+    closeBtn.style.fontSize = '28px';
+    closeBtn.style.fontWeight = 'bold';
+    closeBtn.style.color = '#004085';
     closeBtn.style.cursor = 'pointer';
+    closeBtn.style.userSelect = 'none';
+    closeBtn.onmouseenter = () => (closeBtn.style.color = '#c82333');
+    closeBtn.onmouseleave = () => (closeBtn.style.color = '#004085');
     closeBtn.onclick = closeModal;
     modalEl.appendChild(closeBtn);
 
     document.body.appendChild(modalEl);
+
+    // Add drag listeners ONLY to header bar
+    addDragListeners(headerBar, modalEl);
 }
 
-// updateModal updated to match
 export function updateModal(scenario, ticker = '') {
     if (!modalEl) return;
     createModal(scenario, ticker);
