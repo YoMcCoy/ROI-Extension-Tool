@@ -1,20 +1,14 @@
 // =============================================
 // tableUtils.js (Table Finder/Injector)
 // =============================================
-// - Finds Yahoo options "Calls" table only (never Puts)
-// - Injects ROI columns after "% Change" column
-// - Removes old ROI columns and modal if needed
+// - Finds Yahoo options "Calls" table only (never Puts), injects ROI columns, removes old ROI columns if needed
 
 import { createModal, closeModal } from './modal.js';
 
-// =====================
-// Finds the "Calls" options table (never "Puts")
-// =====================
+// Only finds the "Calls" options table
 export function findOptionTable() {
-    // Yahoo renders Calls and Puts tables as sibling sections
     const tables = Array.from(document.querySelectorAll('section table'));
     for (const table of tables) {
-        // Try to find "Calls" header above table, up to 2 parent elements up
         let section = table.parentElement;
         let foundCalls = false;
         for (let i = 0; i < 2 && section; i++) {
@@ -27,11 +21,9 @@ export function findOptionTable() {
             }
             section = section.parentElement;
         }
-        // Fallback: header row has "Contract Name" or "Strike"
         if (!foundCalls) {
             const headerRow = table.querySelector('thead tr');
             if (headerRow && [...headerRow.cells].some(cell => /Contract Name|Strike/i.test(cell.textContent))) {
-                // Check for text "Calls" in preceding siblings
                 let prev = table.previousElementSibling;
                 while (prev) {
                     if (prev.textContent && /Calls/i.test(prev.textContent)) {
@@ -47,22 +39,18 @@ export function findOptionTable() {
     return null;
 }
 
-// =====================
 // Inject ROI columns (headers + cells) into the options table.
-// =====================
-export function injectROITable(table, results) {
+// Accepts optional ticker string for modal display
+export function injectROITable(table, results, ticker = '') {
     if (!table || !Array.isArray(results) || !results.length) return;
 
-    // --- ROI headers to match your spec ---
-    const roiHeaders = ['ROI -10%', 'ROI 0%', 'ROI 10%'];
-
-    // --- CLEANUP: Remove any existing ROI columns before injecting new ones ---
+    // Cleanup any old ROI columns/modal
     cleanupOldTables();
 
-    // --- Add ROI header columns after "% Change" ---
+    const roiHeaders = ['ROI -10%', 'ROI 0%', 'ROI 10%'];
+
     const headerRow = table.querySelector('thead tr');
     if (headerRow && headerRow.cells.length > 0) {
-        // Find the "% Change" column index
         let insertAfterIdx = -1;
         for (let i = 0; i < headerRow.cells.length; i++) {
             if (headerRow.cells[i].textContent.trim() === '% Change') {
@@ -70,10 +58,7 @@ export function injectROITable(table, results) {
                 break;
             }
         }
-        // Fallback to appending at end if "% Change" not found
         if (insertAfterIdx === -1) insertAfterIdx = headerRow.cells.length - 1;
-
-        // Insert each ROI header after "% Change"
         for (let j = 0; j < roiHeaders.length; j++) {
             const th = document.createElement('th');
             th.textContent = roiHeaders[j];
@@ -85,11 +70,9 @@ export function injectROITable(table, results) {
         }
     }
 
-    // --- Add ROI data cells for each row ---
     const bodyRows = table.querySelectorAll('tbody tr');
     bodyRows.forEach((row, i) => {
         const roiResult = results[i];
-        // Find the "% Change" column index in this row
         let insertAfterIdx = -1;
         for (let c = 0; c < row.cells.length; c++) {
             const text = row.cells[c].textContent.trim();
@@ -104,7 +87,6 @@ export function injectROITable(table, results) {
         }
         if (insertAfterIdx === -1) insertAfterIdx = row.cells.length - 1;
 
-        // If no ROI data for this row, inject empty cells for each scenario
         if (!roiResult || !roiResult.scenarios) {
             for (let j = 0; j < roiHeaders.length; j++) {
                 const td = document.createElement('td');
@@ -115,10 +97,8 @@ export function injectROITable(table, results) {
             return;
         }
 
-        // --- Inject a ROI cell for each scenario (-10%, 0%, +10%) ---
         roiResult.scenarios.forEach((scenario, colIdx) => {
             const td = document.createElement('td');
-            // Format ROI as XX.XX% or blank if not a number
             let displayValue = '';
             if (typeof scenario.roiPercent === 'number' && isFinite(scenario.roiPercent)) {
                 displayValue = scenario.roiPercent.toFixed(2) + '%';
@@ -126,12 +106,12 @@ export function injectROITable(table, results) {
             td.textContent = displayValue;
             td.style.textAlign = 'right';
             td.className = 'roi-cell';
-
-            // Make cell clickable: opens modal with scenario breakdown for this row
             td.style.cursor = 'pointer';
+
+            // Pass single scenario and ticker to modal on click
             td.addEventListener('click', (event) => {
                 closeModal();
-                createModal(roiResult.scenarios);
+                createModal(scenario, ticker);
                 event.stopPropagation();
             });
 
@@ -140,18 +120,14 @@ export function injectROITable(table, results) {
     });
 }
 
-// =====================
 // Remove previously injected ROI columns from the table, plus ROI modal
-// =====================
 export function cleanupOldTables() {
-    // Remove all ROI headers and cells entirely from the DOM
     document.querySelectorAll('.roi-header').forEach(el => {
         el.parentNode && el.parentNode.removeChild(el);
     });
     document.querySelectorAll('.roi-cell').forEach(el => {
         el.parentNode && el.parentNode.removeChild(el);
     });
-    // Remove the ROI modal as well (if it exists)
     const modal = document.querySelector('.roi-tool-modal');
     if (modal && modal.parentNode) {
         modal.parentNode.removeChild(modal);

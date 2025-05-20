@@ -3,66 +3,57 @@
 // =============================================
 // - All functions related to annualized return, stock movement, cap/uncap logic
 
-export function calculateROI(
-    price,          // per share
-    callPremium,    // per share (option prices always per share, but 1 contract = 100 shares)
-    dividend,       // per share (annualized or prorated for the period)
-    strike,
-    expiry,
-    daysToExpiry,
-    { cap = true } = {}
-) {
-    const SHARES_PER_CONTRACT = 100;
-    const scenarios = [
-        { pct: -0.10, label: '-10%' },
-        { pct: 0.00, label: '0%' },
-        { pct: 0.10, label: '+10%' }
-    ];
-
-    return scenarios.map(({ pct, label }) => {
-        // Stock price movement
-        let endPrice = price * (1 + pct);
-        if (cap && endPrice > strike) endPrice = strike;
-
-        // All values below are now for 1 contract (100 shares)
-        const costBasis = price * SHARES_PER_CONTRACT;
-        const dividendYield = dividend * SHARES_PER_CONTRACT;             // Total dividend received (over the period, per 100 shares)
-        const stockMovement = (endPrice - price) * SHARES_PER_CONTRACT;   // Dollar gain/loss from price movement on 100 shares
-        const callOptionIncome = callPremium * SHARES_PER_CONTRACT;       // Total call premium received (for 1 contract)
-
-        // ROI Calculation as per new formula (all per-contract values)
-        const roi = (dividendYield + stockMovement + callOptionIncome) / costBasis;
-
-        // For continuity, return all components
-        return {
-            scenario: label,
-            dividendYield,
-            stockMovement,
-            callOptionIncome,
-            costBasis,
-            roiPercent: typeof roi === "number" && isFinite(roi) ? roi * 100 : 0
-        };
-    });
-}
-
-// Patch: now returns array of objects, each with a 'scenarios' array.
+// Calculates all ROI scenario rows using real data from the table and API
 export function calculateAllRows(table, optionData, dividendData, profile) {
     const rows = Array.from(table.querySelectorAll('tbody tr'));
     const results = [];
     console.log('calculateAllRows: # of rows:', rows.length);
 
-    rows.forEach((row, idx) => {
-        // In production, extract real values from each row here
-        // The following demo values are still per share and will be scaled in calculateROI:
-        const price = 100;
-        const callPremium = 2;
-        const dividend = 1;
-        const strike = 105;
-        const expiry = new Date();
-        const daysToExpiry = 30;
+    // Underlying price from the top of the Yahoo page (profile.price)
+    const price = typeof profile?.price === "number" ? profile.price : 0;
 
-        // Pass all variables into updated ROI calculation
-        const scenarios = calculateROI(price, callPremium, dividend, strike, expiry, daysToExpiry);
+    // Dividend per share from FMP API, use first entry if available
+    let dividend = 0;
+    if (Array.isArray(dividendData) && dividendData.length > 0) {
+        dividend = parseFloat(dividendData[0]?.dividend) || 0;
+    }
+
+    rows.forEach((row, idx) => {
+        // --- Extract from table row cells ---
+        const cells = row.querySelectorAll('td');
+        // [0]=Contract Name, [1]=Last Trade, [2]=Strike, [3]=Last Price, [4]=Bid, [5]=Ask
+        const strike = parseFloat(cells[2]?.textContent.replace(/[^0-9.]/g, '')) || 0;
+        const bid = parseFloat(cells[4]?.textContent.replace(/[^0-9.]/g, '')) || 0;
+        const ask = parseFloat(cells[5]?.textContent.replace(/[^0-9.]/g, '')) || 0;
+        const callPremium = (bid + ask) / 2 || 0;
+
+        // --- Build ROI scenarios for each stock movement case ---
+        const scenarios = [
+            { pct: -0.10, label: '-10%' },
+            { pct: 0.00, label: '0%' },
+            { pct: 0.10, label: '+10%' }
+        ].map(({ pct, label }) => {
+            let endPrice = price * (1 + pct);
+            let stockMovement;
+            // Cap stock movement at strike if called away
+            if (endPrice > strike) {
+                stockMovement = (strike - price) * 100;
+            } else {
+                stockMovement = (endPrice - price) * 100;
+            }
+            const callOptionIncome = callPremium * 100;
+            const costBasis = price * 100;
+            const dividendYield = dividend * 100;
+            const roi = (dividendYield + stockMovement + callOptionIncome) / costBasis;
+            return {
+                scenario: label,
+                dividendYield,
+                stockMovement,
+                callOptionIncome,
+                costBasis,
+                roiPercent: typeof roi === "number" && isFinite(roi) ? roi * 100 : 0
+            };
+        });
 
         results.push({ scenarios });
 

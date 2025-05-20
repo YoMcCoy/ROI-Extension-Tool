@@ -7,7 +7,7 @@
 // - Detects SPA URL/ticker changes so popup & ROI always match current ticker
 
 import { fetchStockProfile, fetchOptionChain, fetchDividends } from './api.js';
-import { calculateROI, calculateAllRows } from './roiCalc.js';
+import { calculateAllRows } from './roiCalc.js';
 import { injectROITable, findOptionTable, cleanupOldTables } from './tableUtils.js';
 import { debug, error } from './logger.js';
 
@@ -84,7 +84,7 @@ async function main() {
 
         // CLEANUP before injecting to prevent duplicates
         cleanupOldTables();
-        injectROITable(table, results);
+        injectROITable(table, results, ticker);
         debug('injectROITable called');
 
         // === POPUP SUMMARY STORAGE LOGIC (historical endpoint, forward annualized) ===
