@@ -47,7 +47,16 @@
     // =============================================
     // - All functions related to annualized return, stock movement, cap/uncap logic
 
-    function calculateROI(price, callPremium, dividend, strike, expiry, daysToExpiry, { cap = true } = {}) {
+    function calculateROI(
+        price,          // per share
+        callPremium,    // per share (option prices always per share, but 1 contract = 100 shares)
+        dividend,       // per share (annualized or prorated for the period)
+        strike,
+        expiry,
+        daysToExpiry,
+        { cap = true } = {}
+    ) {
+        const SHARES_PER_CONTRACT = 100;
         const scenarios = [
             { pct: -0.1, label: '-10%' },
             { pct: 0.00, label: '0%' },
@@ -55,20 +64,27 @@
         ];
 
         return scenarios.map(({ pct, label }) => {
+            // Stock price movement
             let endPrice = price * (1 + pct);
             if (cap && endPrice > strike) endPrice = strike;
-            const callYield = callPremium / price;
-            const divYield = dividend / price;
-            const stockYield = (endPrice - price) / price;
-            const totalYield = callYield + divYield + stockYield;
-            const annualized = totalYield * (365 / daysToExpiry);
+
+            // All values below are now for 1 contract (100 shares)
+            const costBasis = price * SHARES_PER_CONTRACT;
+            const dividendYield = dividend * SHARES_PER_CONTRACT;             // Total dividend received (over the period, per 100 shares)
+            const stockMovement = (endPrice - price) * SHARES_PER_CONTRACT;   // Dollar gain/loss from price movement on 100 shares
+            const callOptionIncome = callPremium * SHARES_PER_CONTRACT;       // Total call premium received (for 1 contract)
+
+            // ROI Calculation as per new formula (all per-contract values)
+            const roi = (dividendYield + stockMovement + callOptionIncome) / costBasis;
+
+            // For continuity, return all components
             return {
                 scenario: label,
-                callYield,
-                divYield,
-                stockYield,
-                totalYield,
-                annualized: typeof annualized === "number" && isFinite(annualized) ? annualized * 100 : 0
+                dividendYield,
+                stockMovement,
+                callOptionIncome,
+                costBasis,
+                roiPercent: typeof roi === "number" && isFinite(roi) ? roi * 100 : 0
             };
         });
     }
@@ -81,13 +97,15 @@
 
         rows.forEach((row, idx) => {
             // In production, extract real values from each row here
+            // The following demo values are still per share and will be scaled in calculateROI:
             const price = 100;
             const callPremium = 2;
             const dividend = 1;
             const strike = 105;
-            const expiry = new Date();
-            const daysToExpiry = 30;
-            const scenarios = calculateROI(price, callPremium, dividend, strike, expiry, daysToExpiry);
+
+            // Pass all variables into updated ROI calculation
+            const scenarios = calculateROI(price, callPremium, dividend, strike);
+
             results.push({ scenarios });
 
             // Debug log for each row injected
@@ -193,10 +211,14 @@
     // =============================================
     // tableUtils.js (Table Finder/Injector)
     // =============================================
-    // - Finds Yahoo options "Calls" table only (never Puts), injects ROI columns, removes old ROI columns if needed
+    // - Finds Yahoo options "Calls" table only (never Puts)
+    // - Injects ROI columns after "% Change" column
+    // - Removes old ROI columns and modal if needed
 
 
-    // Only finds the "Calls" options table
+    // =====================
+    // Finds the "Calls" options table (never "Puts")
+    // =====================
     function findOptionTable() {
         // Yahoo renders Calls and Puts tables as sibling sections
         const tables = Array.from(document.querySelectorAll('section table'));
@@ -234,17 +256,22 @@
         return null;
     }
 
+    // =====================
     // Inject ROI columns (headers + cells) into the options table.
+    // =====================
     function injectROITable(table, results) {
         if (!table || !Array.isArray(results) || !results.length) return;
 
-        // ROI headers to match your spec
+        // --- ROI headers to match your spec ---
         const roiHeaders = ['ROI -10%', 'ROI 0%', 'ROI 10%'];
 
-        // --- Add headers ---
+        // --- CLEANUP: Remove any existing ROI columns before injecting new ones ---
+        cleanupOldTables();
+
+        // --- Add ROI header columns after "% Change" ---
         const headerRow = table.querySelector('thead tr');
         if (headerRow && headerRow.cells.length > 0) {
-            // Find the "% Change" column index (so we can insert ROI columns after it)
+            // Find the "% Change" column index
             let insertAfterIdx = -1;
             for (let i = 0; i < headerRow.cells.length; i++) {
                 if (headerRow.cells[i].textContent.trim() === '% Change') {
@@ -252,11 +279,10 @@
                     break;
                 }
             }
-
-            // Fallback to appending at end if "% Change" is not found
+            // Fallback to appending at end if "% Change" not found
             if (insertAfterIdx === -1) insertAfterIdx = headerRow.cells.length - 1;
 
-            // Insert ROI header cells after "% Change"
+            // Insert each ROI header after "% Change"
             for (let j = 0; j < roiHeaders.length; j++) {
                 const th = document.createElement('th');
                 th.textContent = roiHeaders[j];
@@ -268,20 +294,18 @@
             }
         }
 
-        // --- Add data cells ---
+        // --- Add ROI data cells for each row ---
         const bodyRows = table.querySelectorAll('tbody tr');
         bodyRows.forEach((row, i) => {
             const roiResult = results[i];
-            // Find the "% Change" column index in this row, to insert ROI cells after it
+            // Find the "% Change" column index in this row
             let insertAfterIdx = -1;
             for (let c = 0; c < row.cells.length; c++) {
                 const text = row.cells[c].textContent.trim();
-                // Try to match by column header order
                 if (headerRow && headerRow.cells[c] && headerRow.cells[c].textContent.trim() === '% Change') {
                     insertAfterIdx = c;
                     break;
                 }
-                // Fallback: look for "% Change" in row (edge case)
                 if (text === '% Change') {
                     insertAfterIdx = c;
                     break;
@@ -289,38 +313,45 @@
             }
             if (insertAfterIdx === -1) insertAfterIdx = row.cells.length - 1;
 
-            // If no ROI data for this row, insert empty cells
+            // If no ROI data for this row, inject empty cells for each scenario
             if (!roiResult || !roiResult.scenarios) {
                 for (let j = 0; j < roiHeaders.length; j++) {
                     const td = document.createElement('td');
                     td.textContent = '';
+                    td.className = 'roi-cell';
                     row.insertBefore(td, row.cells[insertAfterIdx + 1 + j]);
                 }
                 return;
             }
 
-            // Insert a cell for each scenario (-10%, 0%, +10%)
+            // --- Inject a ROI cell for each scenario (-10%, 0%, +10%) ---
             roiResult.scenarios.forEach((scenario, colIdx) => {
                 const td = document.createElement('td');
-                td.textContent = (typeof scenario.annualized === 'number')
-                    ? scenario.annualized.toFixed(2) + '%'
-                    : '';
+                // Format ROI as XX.XX% or blank if not a number
+                let displayValue = '';
+                if (typeof scenario.roiPercent === 'number' && isFinite(scenario.roiPercent)) {
+                    displayValue = scenario.roiPercent.toFixed(2) + '%';
+                }
+                td.textContent = displayValue;
                 td.style.textAlign = 'right';
                 td.className = 'roi-cell';
 
-                // Make cell clickable and open modal with scenarios for this row
+                // Make cell clickable: opens modal with scenario breakdown for this row
                 td.style.cursor = 'pointer';
                 td.addEventListener('click', (event) => {
                     closeModal();
                     createModal(roiResult.scenarios);
                     event.stopPropagation();
                 });
+
                 row.insertBefore(td, row.cells[insertAfterIdx + 1 + colIdx]);
             });
         });
     }
 
-    // Remove previously injected ROI columns from the table.
+    // =====================
+    // Remove previously injected ROI columns from the table, plus ROI modal
+    // =====================
     function cleanupOldTables() {
         // Remove all ROI headers and cells entirely from the DOM
         document.querySelectorAll('.roi-header').forEach(el => {
