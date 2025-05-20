@@ -107,17 +107,45 @@ export async function createModal(scenario, ticker = '') {
     content.style.color = '#333';
     content.style.userSelect = 'text'; // Allow text selection in content
 
-    // Clear existing content and add line items individually for line breaks
-    const capped = scenario.stockMovement < 0 ? ' (Called away, capped at strike)' : ' (Not called away)';
-    const stockMovementDisplay = scenario.stockMovement.toFixed(2) + capped;
+    // --- NEW: Correct called away logic using endPrice and strike
+    let calledText = '';
+    if (scenario.endPrice > scenario.strike) {
+        calledText = ' (Called away, capped at strike)';
+    } else if (scenario.endPrice === scenario.strike) {
+        calledText = ' (Called away, at strike)';
+    } else {
+        calledText = ' (Not called away)';
+    }
+    const movementValue = scenario.stockMovement.toFixed(2);
+    const stockMovementDisplay =
+        (movementValue.startsWith('-') ? '-' : '') +
+        '$' +
+        movementValue.replace('-', '') +
+        calledText;
 
-    // Data lines as separate divs for vertical layout
+    // Net Entry Price calculation
+    const netEntryPrice = (scenario.costBasis / 100) - (scenario.callOptionIncome / 100);
+
     [
-        `Strike Price: $${(scenario.costBasis / 100).toFixed(2)}`,
+        `Stock Price: $${(scenario.costBasis / 100).toFixed(2)}`,
+        `Net Entry Price: $${netEntryPrice.toFixed(2)}`,
+        `Strike Price: $${scenario.strike?.toFixed(2) ?? 'N/A'}`,
+    ].forEach(text => {
+        const div = document.createElement('div');
+        div.textContent = text;
+        content.appendChild(div);
+    });
+
+    // Spacer div for extra space
+    const spacer = document.createElement('div');
+    spacer.style.height = '12px'; // adjust as needed
+    content.appendChild(spacer);
+
+    [
         `Call Income: $${scenario.callOptionIncome.toFixed(2)}`,
         `Dividend Income: $${scenario.dividendYield.toFixed(2)}`,
-        `Cost Basis: $${scenario.costBasis.toFixed(2)}`,
-        `Stock Movement: ${stockMovementDisplay}`
+        `Stock Movement: ${stockMovementDisplay}`,
+        `Cost Basis: $${scenario.costBasis.toFixed(2)}`
     ].forEach(text => {
         const div = document.createElement('div');
         div.textContent = text;
@@ -146,7 +174,7 @@ export async function createModal(scenario, ticker = '') {
     closeBtn.textContent = '×';
     closeBtn.title = 'Close';
     closeBtn.style.position = 'absolute';
-    closeBtn.style.top = '8px';
+    closeBtn.style.top = '0px';
     closeBtn.style.right = '16px';
     closeBtn.style.border = 'none';
     closeBtn.style.background = 'transparent';

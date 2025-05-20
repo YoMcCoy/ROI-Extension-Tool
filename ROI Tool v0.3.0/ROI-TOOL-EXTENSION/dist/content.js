@@ -47,7 +47,6 @@
     // =============================================
     // - All functions related to annualized return, stock movement, cap/uncap logic
 
-    // Calculates all ROI scenario rows using real data from the table and API
     function calculateAllRows(table, optionData, dividendData, profile) {
         const rows = Array.from(table.querySelectorAll('tbody tr'));
         const results = [];
@@ -79,7 +78,6 @@
             ].map(({ pct, label }) => {
                 let endPrice = price * (1 + pct);
                 let stockMovement;
-                // Cap stock movement at strike if called away
                 if (endPrice > strike) {
                     stockMovement = (strike - price) * 100;
                 } else {
@@ -87,10 +85,12 @@
                 }
                 const callOptionIncome = callPremium * 100;
                 const costBasis = price * 100;
-                const dividendYield = dividend * 100;
+                const dividendYield = dividend * 100 * 4; // Annualized for 4 quarters
                 const roi = (dividendYield + stockMovement + callOptionIncome) / costBasis;
                 return {
                     scenario: label,
+                    strike,
+                    endPrice, // <-- Added for modal logic
                     dividendYield,
                     stockMovement,
                     callOptionIncome,
@@ -218,17 +218,45 @@
         content.style.color = '#333';
         content.style.userSelect = 'text'; // Allow text selection in content
 
-        // Clear existing content and add line items individually for line breaks
-        const capped = scenario.stockMovement < 0 ? ' (Called away, capped at strike)' : ' (Not called away)';
-        const stockMovementDisplay = scenario.stockMovement.toFixed(2) + capped;
+        // --- NEW: Correct called away logic using endPrice and strike
+        let calledText = '';
+        if (scenario.endPrice > scenario.strike) {
+            calledText = ' (Called away, capped at strike)';
+        } else if (scenario.endPrice === scenario.strike) {
+            calledText = ' (Called away, at strike)';
+        } else {
+            calledText = ' (Not called away)';
+        }
+        const movementValue = scenario.stockMovement.toFixed(2);
+        const stockMovementDisplay =
+            (movementValue.startsWith('-') ? '-' : '') +
+            '$' +
+            movementValue.replace('-', '') +
+            calledText;
 
-        // Data lines as separate divs for vertical layout
+        // Net Entry Price calculation
+        const netEntryPrice = (scenario.costBasis / 100) - (scenario.callOptionIncome / 100);
+
         [
-            `Strike Price: $${(scenario.costBasis / 100).toFixed(2)}`,
+            `Stock Price: $${(scenario.costBasis / 100).toFixed(2)}`,
+            `Net Entry Price: $${netEntryPrice.toFixed(2)}`,
+            `Strike Price: $${scenario.strike?.toFixed(2) ?? 'N/A'}`,
+        ].forEach(text => {
+            const div = document.createElement('div');
+            div.textContent = text;
+            content.appendChild(div);
+        });
+
+        // Spacer div for extra space
+        const spacer = document.createElement('div');
+        spacer.style.height = '12px'; // adjust as needed
+        content.appendChild(spacer);
+
+        [
             `Call Income: $${scenario.callOptionIncome.toFixed(2)}`,
             `Dividend Income: $${scenario.dividendYield.toFixed(2)}`,
-            `Cost Basis: $${scenario.costBasis.toFixed(2)}`,
-            `Stock Movement: ${stockMovementDisplay}`
+            `Stock Movement: ${stockMovementDisplay}`,
+            `Cost Basis: $${scenario.costBasis.toFixed(2)}`
         ].forEach(text => {
             const div = document.createElement('div');
             div.textContent = text;
@@ -257,7 +285,7 @@
         closeBtn.textContent = '×';
         closeBtn.title = 'Close';
         closeBtn.style.position = 'absolute';
-        closeBtn.style.top = '8px';
+        closeBtn.style.top = '0px';
         closeBtn.style.right = '16px';
         closeBtn.style.border = 'none';
         closeBtn.style.background = 'transparent';
@@ -348,9 +376,12 @@
                 const th = document.createElement('th');
                 th.textContent = roiHeaders[j];
                 th.className = 'roi-header';
-                th.style.background = '#FFF9E5';
+                // All headers use the same green translucent background
+                th.style.background = 'rgba(30, 255, 49, 0.1)';
                 th.style.color = '#222';
                 th.style.fontWeight = 'bold';
+                th.style.padding = '8px 18px';
+                th.style.textAlign = 'center';
                 headerRow.insertBefore(th, headerRow.cells[insertAfterIdx + 1 + j]);
             }
         }
@@ -377,6 +408,8 @@
                     const td = document.createElement('td');
                     td.textContent = '';
                     td.className = 'roi-cell';
+                    td.style.padding = '8px 18px';
+                    td.style.textAlign = 'center';
                     row.insertBefore(td, row.cells[insertAfterIdx + 1 + j]);
                 }
                 return;
@@ -389,11 +422,25 @@
                     displayValue = scenario.roiPercent.toFixed(2) + '%';
                 }
                 td.textContent = displayValue;
-                td.style.textAlign = 'right';
+                td.style.textAlign = 'center';
                 td.className = 'roi-cell';
                 td.style.cursor = 'pointer';
+                td.style.padding = '8px 18px';
 
-                // Pass single scenario and ticker to modal on click
+                // Color coding: green for positive, red for negative
+                if (scenario.roiPercent > 0) {
+                    td.style.color = 'green';
+                } else if (scenario.roiPercent < 0) {
+                    td.style.color = 'red';
+                } else {
+                    td.style.color = '#222';
+                }
+
+                // Shade 0% column (cell backgrounds remain as you had them)
+                if (colIdx === 1) {
+                    td.style.background = 'rgba(212, 255, 210, 0.3)';
+                }
+
                 td.addEventListener('click', (event) => {
                     closeModal();
                     createModal(scenario, ticker);

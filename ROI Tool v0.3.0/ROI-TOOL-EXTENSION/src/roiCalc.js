@@ -3,7 +3,6 @@
 // =============================================
 // - All functions related to annualized return, stock movement, cap/uncap logic
 
-// Calculates all ROI scenario rows using real data from the table and API
 export function calculateAllRows(table, optionData, dividendData, profile) {
     const rows = Array.from(table.querySelectorAll('tbody tr'));
     const results = [];
@@ -35,7 +34,6 @@ export function calculateAllRows(table, optionData, dividendData, profile) {
         ].map(({ pct, label }) => {
             let endPrice = price * (1 + pct);
             let stockMovement;
-            // Cap stock movement at strike if called away
             if (endPrice > strike) {
                 stockMovement = (strike - price) * 100;
             } else {
@@ -43,10 +41,12 @@ export function calculateAllRows(table, optionData, dividendData, profile) {
             }
             const callOptionIncome = callPremium * 100;
             const costBasis = price * 100;
-            const dividendYield = dividend * 100;
+            const dividendYield = dividend * 100 * 4; // Annualized for 4 quarters
             const roi = (dividendYield + stockMovement + callOptionIncome) / costBasis;
             return {
                 scenario: label,
+                strike,
+                endPrice, // <-- Added for modal logic
                 dividendYield,
                 stockMovement,
                 callOptionIncome,

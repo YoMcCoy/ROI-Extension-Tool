@@ -63,9 +63,12 @@ export function injectROITable(table, results, ticker = '') {
             const th = document.createElement('th');
             th.textContent = roiHeaders[j];
             th.className = 'roi-header';
-            th.style.background = '#FFF9E5';
+            // All headers use the same green translucent background
+            th.style.background = 'rgba(30, 255, 49, 0.1)';
             th.style.color = '#222';
             th.style.fontWeight = 'bold';
+            th.style.padding = '8px 18px';
+            th.style.textAlign = 'center';
             headerRow.insertBefore(th, headerRow.cells[insertAfterIdx + 1 + j]);
         }
     }
@@ -92,6 +95,8 @@ export function injectROITable(table, results, ticker = '') {
                 const td = document.createElement('td');
                 td.textContent = '';
                 td.className = 'roi-cell';
+                td.style.padding = '8px 18px';
+                td.style.textAlign = 'center';
                 row.insertBefore(td, row.cells[insertAfterIdx + 1 + j]);
             }
             return;
@@ -104,11 +109,25 @@ export function injectROITable(table, results, ticker = '') {
                 displayValue = scenario.roiPercent.toFixed(2) + '%';
             }
             td.textContent = displayValue;
-            td.style.textAlign = 'right';
+            td.style.textAlign = 'center';
             td.className = 'roi-cell';
             td.style.cursor = 'pointer';
+            td.style.padding = '8px 18px';
 
-            // Pass single scenario and ticker to modal on click
+            // Color coding: green for positive, red for negative
+            if (scenario.roiPercent > 0) {
+                td.style.color = 'green';
+            } else if (scenario.roiPercent < 0) {
+                td.style.color = 'red';
+            } else {
+                td.style.color = '#222';
+            }
+
+            // Shade 0% column (cell backgrounds remain as you had them)
+            if (colIdx === 1) {
+                td.style.background = 'rgba(212, 255, 210, 0.3)';
+            }
+
             td.addEventListener('click', (event) => {
                 closeModal();
                 createModal(scenario, ticker);
