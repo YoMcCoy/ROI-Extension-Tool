@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ROI Tool Extension",
-  "version": "0.3.5",
+  "version": "0.4.0",
   "description": "Shows annualized ROI on Yahoo options chains and popup.",
   "icons": {
     "16": "icon.png",
@@ -22,12 +22,14 @@
     "storage"
   ],
   "host_permissions": [
+    "https://finance.yahoo.com/quote/*",
     "https://finance.yahoo.com/quote/*/options*",
     "https://financialmodelingprep.com/*"
   ],
   "content_scripts": [
     {
       "matches": [
+        "https://finance.yahoo.com/quote/*",
         "https://finance.yahoo.com/quote/*/options*"
       ],
       "js": [

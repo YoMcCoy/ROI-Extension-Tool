@@ -11,8 +11,15 @@ function updatePopupContent() {
         contentDiv.innerHTML = `
             <div class="data-block"><span class="data-label">Stock Ticker:</span> ${summary.ticker}</div>
             <div class="data-block"><span class="data-label">Price:</span> $${summary.price}</div>
-            <div class="data-block"><span class="data-label">Annualized Dividend:</span> $${summary.dividend}</div>
-            <div style="margin-top:1em; font-size:90%; color:#777;">(Source: FMP API)<br>Open a Yahoo options page and click an ROI cell for a full breakdown.</div>
+            <div class="data-block">
+                <span class="data-label">Annualized Dividend:</span> $${summary.dividend}
+                <span style="font-size:85%;color:#555;">
+                    (${summary.frequency || 'unknown'}, $${summary.lastDiv || '0'} per payment)
+                </span>
+            </div>
+            <div style="margin-top:1em; font-size:90%; color:#777;">
+                (Source: FMP API)<br>Open a Yahoo options page and click an ROI cell for a full breakdown.
+            </div>
         `;
     });
 }

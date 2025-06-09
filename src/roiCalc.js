@@ -3,6 +3,25 @@
 // =============================================
 // - All functions related to annualized return, stock movement, cap/uncap logic
 
+function getDividendFrequency(dividends) {
+    if (!Array.isArray(dividends) || dividends.length < 2) return 1;
+    const date1 = new Date(dividends[0].date);
+    const date2 = new Date(dividends[1].date);
+    const days = Math.abs((date1 - date2) / (1000 * 60 * 60 * 24));
+    if (days > 340) return 1;    // annual
+    if (days > 160) return 2;    // biannual
+    if (days > 60) return 4;    // quarterly
+    if (days > 20) return 12;   // monthly
+    return 1;
+}
+
+function getAnnualizedDividend(dividends) {
+    if (!Array.isArray(dividends) || dividends.length === 0) return 0;
+    const lastDiv = parseFloat(dividends[0].dividend) || 0;
+    const freq = getDividendFrequency(dividends);
+    return lastDiv * freq;
+}
+
 export function calculateAllRows(table, optionData, dividendData, profile) {
     const rows = Array.from(table.querySelectorAll('tbody tr'));
     const results = [];
@@ -11,11 +30,8 @@ export function calculateAllRows(table, optionData, dividendData, profile) {
     // Underlying price from the top of the Yahoo page (profile.price)
     const price = typeof profile?.price === "number" ? profile.price : 0;
 
-    // Dividend per share from FMP API, use first entry if available
-    let dividend = 0;
-    if (Array.isArray(dividendData) && dividendData.length > 0) {
-        dividend = parseFloat(dividendData[0]?.dividend) || 0;
-    }
+    // Annualized dividend per share, inferred from FMP history
+    const annualizedDividend = getAnnualizedDividend(dividendData);
 
     rows.forEach((row, idx) => {
         // --- Extract from table row cells ---
@@ -41,7 +57,7 @@ export function calculateAllRows(table, optionData, dividendData, profile) {
             }
             const callOptionIncome = callPremium * 100;
             const costBasis = price * 100;
-            const dividendYield = dividend * 100 * 4; // Annualized for 4 quarters
+            const dividendYield = annualizedDividend * 100; // annualized for 100 shares
             const roi = (dividendYield + stockMovement + callOptionIncome) / costBasis;
             return {
                 scenario: label,
